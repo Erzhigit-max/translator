@@ -141,40 +141,13 @@ textarea::placeholder {
   word-break: break-word;
 }
 
-/* Тусклая неприметная буква ответа внизу карточки перевода */
 .subtle-answer {
-  font-size: 13px;
-  color: #3e4247;
-  margin-top: 12px;
-  font-weight: 600;
-  user-select: none;
-}
-
-.answer-card {
-  background-color: #004a77;
-  border: 1px solid #00639b;
-  border-radius: 20px;
-  padding: 14px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.answer-label {
   font-size: 14px;
-  color: #c2e7ff;
-  font-weight: 500;
-}
-
-.answer-value {
-  font-size: 22px;
+  color: #2a2b2d;
+  margin-top: 15px;
   font-weight: 700;
-  color: #ffffff;
-  background-color: #00639b;
-  padding: 4px 16px;
-  border-radius: 12px;
-  min-width: 44px;
-  text-align: center;
+  user-select: none;
+  text-align: right;
 }
 
 .action-btn {
