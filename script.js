@@ -24,6 +24,48 @@ clearBtn.addEventListener('click', () => {
   inputText.focus();
 });
 
+// Запрос к быстрым моделям Gemini с автоматической сменой при сбое
+async function callGemini(text, apiKey) {
+  const models = ['gemini-2.0-flash', 'gemini-3.8-flash'];
+  let lastErr = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `Translate English to Russian. If input is a Java test question with options A,B,C,D,E,F, select correct letter. Return JSON ONLY:
+{"translation":"russian translation","has_question":true/false,"correct_option":"letter or null"}
+
+Input:
+${text}`
+            }]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+            maxOutputTokens: 250
+          }
+        })
+      });
+
+      if (response.ok) {
+        return await response.json();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        lastErr = new Error(`HTTP ${response.status}: ${errData.error?.message || response.statusText}`);
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  throw lastErr || new Error('Ошибка связи с ИИ');
+}
+
 translateBtn.addEventListener('click', async () => {
   const text = inputText.value.trim();
   const apiKey = apiKeyInput.value.trim();
@@ -37,41 +79,8 @@ translateBtn.addEventListener('click', async () => {
   btnText.innerText = 'Обработка...';
   translateBtn.disabled = true;
 
-  // Таймаут 10 секунд на случай проблем с мобильной сетью
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: `Translate to Russian. If Java test question with options, select correct letter. Return JSON ONLY:
-{"translation":"russian text","has_question":true/false,"correct_option":"letter or null"}
-
-Input:
-${text}`
-          }]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-          maxOutputTokens: 200
-        }
-      })
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(`HTTP ${response.status}: ${errData.error?.message || response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await callGemini(text, apiKey);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const result = JSON.parse(rawText);
 
@@ -81,19 +90,18 @@ ${text}`
       const letter = String(result.correct_option).toUpperCase();
       answerValue.innerText = letter;
       answerCard.style.display = 'flex';
-      subtleAnswer.innerText = letter; // Неприметная буква снизу
+      
+      // Неприметная буква снизу перевода
+      subtleAnswer.innerText = letter;
     } else {
       answerCard.style.display = 'none';
       subtleAnswer.innerText = '';
     }
 
   } catch (err) {
-    if (err.name === 'AbortError') {
-      outputText.innerText = 'Ошибка: Превышено время ожидания ответа (10 сек). Проверьте мобильный интернет.';
-    } else {
-      outputText.innerText = `Ошибка: ${err.message}`;
-    }
+    outputText.innerText = `Ошибка: ${err.message}`;
     subtleAnswer.innerText = '';
+    console.error(err);
   } finally {
     btnText.innerText = 'Перевести';
     translateBtn.disabled = false;
