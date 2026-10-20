@@ -24,46 +24,67 @@ clearBtn.addEventListener('click', () => {
   inputText.focus();
 });
 
-// Запрос к быстрым моделям Gemini с автоматической сменой при сбое
-async function callGemini(text, apiKey) {
-  const models = ['gemini-2.0-flash', 'gemini-3.8-flash'];
-  let lastErr = null;
-
-  for (const model of models) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `Translate English to Russian. If input is a Java test question with options A,B,C,D,E,F, select correct letter. Return JSON ONLY:
-{"translation":"russian translation","has_question":true/false,"correct_option":"letter or null"}
+async function sendRequest(model, text, apiKey) {
+  return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{
+          text: `Translate English to Russian. If input is a Java test question with options A,B,C,D,E,F, select correct letter. Return JSON ONLY:
+{"translation":"russian text","has_question":true/false,"correct_option":"letter or null"}
 
 Input:
 ${text}`
-            }]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
-            maxOutputTokens: 250
-          }
-        })
-      });
-
-      if (response.ok) {
-        return await response.json();
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        lastErr = new Error(`HTTP ${response.status}: ${errData.error?.message || response.statusText}`);
+        }]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.1,
+        maxOutputTokens: 250
       }
-    } catch (e) {
-      lastErr = e;
+    })
+  });
+}
+
+async function callGeminiWithFallback(text, apiKey) {
+  // Список резервных моделей Google для обхода перегрузок (503)
+  const models = [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-2.5-flash'
+  ];
+
+  let lastError = '';
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await sendRequest(model, text, apiKey);
+        
+        if (res.ok) {
+          return await res.json();
+        }
+        
+        if (res.status === 503) {
+          // Если модель перегружена (503), делаем паузу 250мс и переходим дальше
+          await new Promise(r => setTimeout(r, 250));
+          continue;
+        }
+
+        const errData = await res.json().catch(() => ({}));
+        lastError = `HTTP ${res.status}: ${errData.error?.message || res.statusText}`;
+        break;
+      } catch (e) {
+        lastError = e.message;
+        break;
+      }
     }
   }
 
-  throw lastErr || new Error('Ошибка связи с ИИ');
+  throw new Error(lastError || 'Серверы Google перегружены. Нажмите кнопку еще раз.');
 }
 
 translateBtn.addEventListener('click', async () => {
@@ -80,7 +101,7 @@ translateBtn.addEventListener('click', async () => {
   translateBtn.disabled = true;
 
   try {
-    const data = await callGemini(text, apiKey);
+    const data = await callGeminiWithFallback(text, apiKey);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const result = JSON.parse(rawText);
 
@@ -91,7 +112,7 @@ translateBtn.addEventListener('click', async () => {
       answerValue.innerText = letter;
       answerCard.style.display = 'flex';
       
-      // Неприметная буква снизу перевода
+      // Неприметный дубликат снизу карточки перевода
       subtleAnswer.innerText = letter;
     } else {
       answerCard.style.display = 'none';
