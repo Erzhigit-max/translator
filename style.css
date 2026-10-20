@@ -141,6 +141,7 @@ textarea::placeholder {
   word-break: break-word;
 }
 
+/* Тусклая неприметная буква, сливающаяся с фоном карточки */
 .subtle-answer {
   font-size: 14px;
   color: #2a2b2d;
