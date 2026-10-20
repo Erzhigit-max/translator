@@ -30,21 +30,26 @@ translateBtn.addEventListener('click', async () => {
 
   if (!text) return;
   if (!apiKey) {
-    alert('Введите Gemini API Key в поле сверху!');
+    alert('Введите Gemini API Key!');
     return;
   }
 
   btnText.innerText = 'Обработка...';
   translateBtn.disabled = true;
 
+  // Таймаут 10 секунд на случай проблем с мобильной сетью
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `Translate English to Russian. If input has a Java test question with options, select correct option letter (A,B,C,D,E,F). Return JSON only:
+            text: `Translate to Russian. If Java test question with options, select correct letter. Return JSON ONLY:
 {"translation":"russian text","has_question":true/false,"correct_option":"letter or null"}
 
 Input:
@@ -54,40 +59,41 @@ ${text}`
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.1,
-          maxOutputTokens: 350
+          maxOutputTokens: 200
         }
       })
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(`Ошибка HTTP ${response.status}: ${errData.error?.message || response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${errData.error?.message || response.statusText}`);
     }
 
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const result = JSON.parse(rawText);
 
-    outputText.innerText = result.translation || 'Перевод не найден';
+    outputText.innerText = result.translation || 'Перевод отсутствует';
 
     if (result.has_question && result.correct_option) {
-      const optionLetter = String(result.correct_option).toUpperCase();
-      
-      // Синяя нижняя плашка
-      answerValue.innerText = optionLetter;
+      const letter = String(result.correct_option).toUpperCase();
+      answerValue.innerText = letter;
       answerCard.style.display = 'flex';
-      
-      // Неприметный дубликат снизу текста перевода
-      subtleAnswer.innerText = optionLetter;
+      subtleAnswer.innerText = letter; // Неприметная буква снизу
     } else {
       answerCard.style.display = 'none';
       subtleAnswer.innerText = '';
     }
 
   } catch (err) {
-    outputText.innerText = `Ошибка: ${err.message}`;
+    if (err.name === 'AbortError') {
+      outputText.innerText = 'Ошибка: Превышено время ожидания ответа (10 сек). Проверьте мобильный интернет.';
+    } else {
+      outputText.innerText = `Ошибка: ${err.message}`;
+    }
     subtleAnswer.innerText = '';
-    console.error(err);
   } finally {
     btnText.innerText = 'Перевести';
     translateBtn.disabled = false;
