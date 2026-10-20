@@ -1,5 +1,6 @@
 const inputText = document.getElementById('inputText');
 const outputText = document.getElementById('outputText');
+const subtleAnswer = document.getElementById('subtleAnswer');
 const answerCard = document.getElementById('answerCard');
 const answerValue = document.getElementById('answerValue');
 const clearBtn = document.getElementById('clearBtn');
@@ -18,6 +19,7 @@ apiKeyInput.addEventListener('change', () => {
 clearBtn.addEventListener('click', () => {
   inputText.value = '';
   outputText.innerText = 'Здесь появится перевод...';
+  subtleAnswer.innerText = '';
   answerCard.style.display = 'none';
   inputText.focus();
 });
@@ -36,29 +38,24 @@ translateBtn.addEventListener('click', async () => {
   translateBtn.disabled = true;
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `You are an expert translator and senior Java developer.
-Analyze the user input text.
-Tasks:
-1. Translate the entire English text to natural Russian. Keep original formatting.
-2. Check if the text contains a test question with options (e.g. A, B, C, D, E, F).
-3. If it is a Java or general multiple-choice question, evaluate it accurately and choose the correct single option letter.
-4. Respond ONLY with a valid raw JSON object, without markdown code fences or extra text:
-{
-  "translation": "текст перевода на русский",
-  "has_question": true/false,
-  "correct_option": "буква (например A) или null"
-}
+            text: `Translate English to Russian. If input has a Java test question with options, select correct option letter (A,B,C,D,E,F). Return JSON only:
+{"translation":"russian text","has_question":true/false,"correct_option":"letter or null"}
 
 Input:
 ${text}`
           }]
-        }]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.1,
+          maxOutputTokens: 350
+        }
       })
     });
 
@@ -68,24 +65,28 @@ ${text}`
     }
 
     const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Не удалось разобрать ответ от ИИ.');
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const result = JSON.parse(rawText);
 
-    const result = JSON.parse(jsonMatch[0]);
-
-    outputText.innerText = result.translation;
+    outputText.innerText = result.translation || 'Перевод не найден';
 
     if (result.has_question && result.correct_option) {
-      answerValue.innerText = String(result.correct_option).toUpperCase();
+      const optionLetter = String(result.correct_option).toUpperCase();
+      
+      // Синяя нижняя плашка
+      answerValue.innerText = optionLetter;
       answerCard.style.display = 'flex';
+      
+      // Неприметный дубликат снизу текста перевода
+      subtleAnswer.innerText = optionLetter;
     } else {
       answerCard.style.display = 'none';
+      subtleAnswer.innerText = '';
     }
 
   } catch (err) {
     outputText.innerText = `Ошибка: ${err.message}`;
+    subtleAnswer.innerText = '';
     console.error(err);
   } finally {
     btnText.innerText = 'Перевести';
