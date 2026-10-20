@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- Манифест для полноэкранного режима (убирает нижнюю строку браузера) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#121212">
+  
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Google Переводчик</title>
   <style>
     * {
@@ -151,7 +159,6 @@
       word-break: break-word;
     }
 
-    /* Тусклая неприметная буква, сливающаяся с фоном карточки */
     .subtle-answer {
       font-size: 14px;
       color: #2a2b2d;
@@ -181,7 +188,8 @@
 <body>
 
   <div class="header">
-    <div class="header-title">Google <span>Переводчик</span></div>
+    <!-- Добавлен id="secretTitle" для скрытия/показа строки -->
+    <div class="header-title" id="secretTitle">Google <span>Переводчик</span></div>
   </div>
 
   <div class="language-selector">
@@ -190,7 +198,7 @@
     <button class="lang-btn">Русский</button>
   </div>
 
-  <div class="api-key-container">
+  <div class="api-key-container" id="apiContainer">
     <input type="password" id="apiKey" class="api-key-input" placeholder="Gemini API Key...">
   </div>
 
@@ -207,7 +215,6 @@
     <div class="card">
       <div class="card-header">Перевод (Русский)</div>
       <div id="outputText" class="output-text">Здесь появится перевод...</div>
-      <!-- Неприметный ответ в правом нижнем углу карточки -->
       <div id="subtleAnswer" class="subtle-answer"></div>
     </div>
   </div>
@@ -220,6 +227,8 @@
     const translateBtn = document.getElementById('translateBtn');
     const btnText = document.getElementById('btnText');
     const apiKeyInput = document.getElementById('apiKey');
+    const apiContainer = document.getElementById('apiContainer');
+    const secretTitle = document.getElementById('secretTitle');
 
     const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
     const TIMEOUT_MS = 15000;
@@ -246,8 +255,18 @@
       try { localStorage.setItem(key, value); } catch { }
     }
 
-    apiKeyInput.value = storageGet('gemini_api_key') || '';
+    // Проверяем наличие ключа и сразу прячем поле, если он есть
+    if (storageGet('gemini_api_key')) {
+      apiKeyInput.value = storageGet('gemini_api_key');
+      apiContainer.style.display = 'none'; 
+    }
+
     apiKeyInput.addEventListener('input', () => storageSet('gemini_api_key', apiKeyInput.value.trim()));
+
+    // Секретная кнопка: нажимаем на заголовок, чтобы показать/скрыть строку API
+    secretTitle.addEventListener('click', () => {
+      apiContainer.style.display = apiContainer.style.display === 'none' ? 'block' : 'none';
+    });
 
     clearBtn.addEventListener('click', () => {
       inputText.value = '';
@@ -390,6 +409,8 @@
       if (!text) return;
       if (!apiKey) {
         alert('Введите ключ API!');
+        // Автоматически показываем строку, если ключа нет
+        apiContainer.style.display = 'block';
         return;
       }
       storageSet('gemini_api_key', apiKey);
