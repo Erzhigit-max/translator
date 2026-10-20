@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Google Переводчик</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-title">Google <span>Переводчик</span></div>
+  </div>
+
+  <div class="language-selector">
+    <button class="lang-btn">Английский</button>
+    <button class="swap-btn">⇄</button>
+    <button class="lang-btn">Русский</button>
+  </div>
+
+  <div class="api-key-container">
+    <input type="password" id="apiKey" class="api-key-input" placeholder="Gemini API Key...">
+  </div>
+
+  <div class="content">
+    <div class="card">
+      <div class="card-header">Английский</div>
+      <button class="clear-btn" id="clearBtn">×</button>
+      <textarea id="inputText" placeholder="Введите текст или тестовый вопрос..."></textarea>
+      <button class="action-btn" id="translateBtn">
+        <span id="btnText">Перевести</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Перевод (Русский)</div>
+      <div id="outputText" class="output-text">Здесь появится перевод...</div>
+    </div>
+
+    <div class="answer-card" id="answerCard" style="display: none;">
+      <span class="answer-label">Правильный вариант (Java AI):</span>
+      <span class="answer-value" id="answerValue">-</span>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
