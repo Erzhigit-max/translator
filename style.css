@@ -141,6 +141,15 @@ textarea::placeholder {
   word-break: break-word;
 }
 
+/* Неприметная буква снизу перевода */
+.subtle-answer {
+  font-size: 13px;
+  color: #4a4d51;
+  margin-top: 10px;
+  font-weight: 500;
+  user-select: none;
+}
+
 .answer-card {
   background-color: #004a77;
   border: 1px solid #00639b;
