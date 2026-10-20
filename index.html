@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <!-- Манифест для полноэкранного режима (убирает нижнюю строку браузера) -->
   <link rel="manifest" href="manifest.json">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#121212">
@@ -41,6 +40,8 @@
     .header-title {
       font-size: 20px;
       color: #e3e2e6;
+      cursor: pointer;
+      user-select: none;
     }
 
     .header-title span {
@@ -188,7 +189,6 @@
 <body>
 
   <div class="header">
-    <!-- Добавлен id="secretTitle" для скрытия/показа строки -->
     <div class="header-title" id="secretTitle">Google <span>Переводчик</span></div>
   </div>
 
@@ -231,7 +231,6 @@
     const secretTitle = document.getElementById('secretTitle');
 
     const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-    const TIMEOUT_MS = 15000;
 
     const MODELS = [
       { id: 'gemini-3.5-flash-lite' },
@@ -245,8 +244,6 @@
       '2. If the text contains a multiple-choice question, find the correct option letter. ' +
       '3. Respond STRICTLY in JSON format: {"translation": "Текст на русском", "correct_option": "A" (или null если это не тест)}.';
 
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
     function storageGet(key) {
       try { return localStorage.getItem(key); } catch { return null; }
     }
@@ -255,15 +252,13 @@
       try { localStorage.setItem(key, value); } catch { }
     }
 
-    // Проверяем наличие ключа и сразу прячем поле, если он есть
     if (storageGet('gemini_api_key')) {
       apiKeyInput.value = storageGet('gemini_api_key');
-      apiContainer.style.display = 'none'; 
+      apiContainer.style.display = 'none';
     }
 
     apiKeyInput.addEventListener('input', () => storageSet('gemini_api_key', apiKeyInput.value.trim()));
 
-    // Секретная кнопка: нажимаем на заголовок, чтобы показать/скрыть строку API
     secretTitle.addEventListener('click', () => {
       apiContainer.style.display = apiContainer.style.display === 'none' ? 'block' : 'none';
     });
@@ -275,19 +270,10 @@
       inputText.focus();
     });
 
-    async function fetchJson(url, options = {}) {
+    async function sendQuery(modelObj, text, apiKey) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      try {
-        const res = await fetch(url, { ...options, signal: controller.signal });
-        const data = await res.json().catch(() => ({}));
-        return { res, data };
-      } finally {
-        clearTimeout(timer);
-      }
-    }
+      const timer = setTimeout(() => controller.abort(), 6000);
 
-    function buildBody(text, model) {
       const body = {
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text }] }],
@@ -296,110 +282,38 @@
           temperature: 0.1
         }
       };
-      if (model.thinking) {
-        body.generationConfig.thinkingConfig = { thinkingLevel: model.thinking };
-      }
-      return body;
-    }
 
-    function extractData(data) {
-      const candidate = data?.candidates?.[0];
-      const text = (candidate?.content?.parts || [])
-        .filter((p) => !p.thought && typeof p.text === 'string')
-        .map((p) => p.text)
-        .join('')
-        .trim();
-      if (!text) {
-        const reason = data?.promptFeedback?.blockReason || candidate?.finishReason;
-        throw new Error(reason ? `Модель не вернула ответ (${reason})` : 'Модель не вернула ответ');
+      if (modelObj.thinking) {
+        body.generationConfig.thinkingConfig = { thinkingLevel: modelObj.thinking };
       }
+
       try {
-        return JSON.parse(text);
-      } catch (e) {
-        return { translation: text, correct_option: null };
-      }
-    }
+        const res = await fetch(`${API_BASE}/models/${modelObj.id}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
 
-    function apiError(res, data) {
-      const message = data?.error?.message || res.statusText || 'Неизвестная ошибка';
-      const err = new Error(`HTTP ${res.status}: ${message}`);
-      err.status = res.status;
-      err.fatal = res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(message));
-      err.retryable = res.status >= 500 || res.status === 429;
-      return err;
-    }
+        clearTimeout(timer);
+        const data = await res.json().catch(() => ({}));
 
-    async function callModel(model, text, apiKey) {
-      let result;
-      try {
-        result = await fetchJson(
-          `${API_BASE}/models/${model.id}:generateContent?key=${encodeURIComponent(apiKey)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildBody(text, model))
-          }
-        );
-      } catch (e) {
-        e.retryable = true; 
-        throw e;
-      }
-      if (result.res.ok) return extractData(result.data);
-      throw apiError(result.res, result.data);
-    }
-
-    async function discoverModels(apiKey) {
-      try {
-        const { res, data } = await fetchJson(`${API_BASE}/models?pageSize=1000&key=${encodeURIComponent(apiKey)}`);
-        if (!res.ok) return [];
-        const version = (id) => parseFloat(id.match(/^gemini-(\d+(?:\.\d+)?)/)[1]);
-        return (data.models || [])
-          .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-          .map((m) => m.name.replace(/^models\//, ''))
-          .filter((id) => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(id))
-          .sort((a, b) => version(b) - version(a))
-          .map((id) => ({ id }));
-      } catch {
-        return [];
-      }
-    }
-
-    async function processText(text, apiKey) {
-      const tried = new Set();
-      let lastError = null;
-
-      async function tryModels(models) {
-        for (const model of models) {
-          if (tried.has(model.id)) continue;
-          tried.add(model.id);
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              return await callModel(model, text, apiKey);
-            } catch (e) {
-              lastError = e;
-              if (e.fatal) throw e;
-              if (!e.retryable || attempt === 2) break;
-              btnText.innerText = 'Сервер занят, повтор...';
-              await sleep(1000);
-            }
-          }
+        if (!res.ok) {
+          const msg = data?.error?.message || res.statusText || 'Неизвестная ошибка';
+          throw new Error(`HTTP ${res.status}: ${msg}`);
         }
-        return null;
-      }
 
-      let result = await tryModels(MODELS);
-      if (result === null && lastError && lastError.status === 404) {
-        result = await tryModels(await discoverModels(apiKey));
-      }
-      if (result === null) throw lastError || new Error('Все серверы недоступны');
-      return result;
-    }
+        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!raw) throw new Error('Пустой ответ от модели');
 
-    function humanize(err) {
-      if (err.name === 'AbortError') return `Время ожидания истекло (более ${TIMEOUT_MS / 1000} сек). Проверьте интернет.`;
-      if (err.retryable && !err.status) return 'Нет связи с сервером Google. Проверьте интернет.';
-      if (err.status === 429) return 'Превышен лимит запросов Gemini API. Подождите немного.';
-      return err.message;
+        return JSON.parse(raw);
+      } catch (err) {
+        clearTimeout(timer);
+        if (err.name === 'AbortError') {
+          throw new Error('Превышено время ожидания (6 сек). Проверьте интернет.');
+        }
+        throw err;
+      }
     }
 
     translateBtn.addEventListener('click', async () => {
@@ -409,31 +323,44 @@
       if (!text) return;
       if (!apiKey) {
         alert('Введите ключ API!');
-        // Автоматически показываем строку, если ключа нет
         apiContainer.style.display = 'block';
         return;
       }
-      storageSet('gemini_api_key', apiKey);
 
-      btnText.innerText = 'Перевод...';
+      btnText.innerText = 'Обработка...';
       translateBtn.disabled = true;
-      subtleAnswer.innerText = ''; 
+      subtleAnswer.innerText = '';
 
-      try {
-        const result = await processText(text, apiKey);
-        
-        outputText.innerText = result.translation || 'Перевод пуст';
-        
-        if (result.correct_option && result.correct_option !== 'null') {
-          subtleAnswer.innerText = String(result.correct_option).toUpperCase();
+      let lastErr = null;
+
+      for (const model of MODELS) {
+        try {
+          const result = await sendQuery(model, text, apiKey);
+          outputText.innerText = result.translation || 'Перевод отсутствует';
+
+          if (result.correct_option && result.correct_option !== 'null') {
+            subtleAnswer.innerText = String(result.correct_option).toUpperCase();
+          }
+
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (/400|401|403|429/.test(err.message)) {
+            break;
+          }
         }
-        
-      } catch (err) {
-        outputText.innerText = `Ошибка: ${humanize(err)}`;
-      } finally {
-        btnText.innerText = 'Перевести';
-        translateBtn.disabled = false;
       }
+
+      if (lastErr) {
+        outputText.innerText = `Ошибка: ${lastErr.message}`;
+        if (/400|401|403|429/.test(lastErr.message)) {
+          apiContainer.style.display = 'block';
+        }
+      }
+
+      btnText.innerText = 'Перевести';
+      translateBtn.disabled = false;
     });
   </script>
 </body>
